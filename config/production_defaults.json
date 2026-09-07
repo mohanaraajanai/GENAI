@@ -1,0 +1,11 @@
+{
+  "chunk_size": 1000,
+  "chunk_overlap": 150,
+  "retrieval_k": 5,
+  "embedding_model": "text-embedding-3-small",
+  "default_llm": "gpt-4.1-mini",
+  "temperature": 0.2,
+  "web_search_enabled": true,
+  "web_result_count": 5,
+  "conversation_history_limit": 20
+}

@@ -90,6 +90,6 @@ with sync_playwright() as p:
             print(type(e).__name__)
             print(str(e))
 
-    input("\nPress ENTER to close browser...")
+  #  input("\nPress ENTER to close browser...")#
 
     browser.close()

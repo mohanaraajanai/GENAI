@@ -1,837 +1,1716 @@
-# Vikaspedia Farmer Schemes PDF Scraper
+# Vikaspedia Agri Farmer Adviser --- Self-RAG Chatbot
 
-A Python + Playwright + Streamlit application that discovers Farmer Schemes from Vikaspedia, handles pagination, opens each individual scheme page, and downloads the scheme PDF.
+## 1. Project Overview
 
-## 1. Workflow
+The **Vikaspedia Agri Farmer Adviser** is a beginner-friendly GenAI
+application that answers Indian agriculture and farmer-support questions
+using a curated collection of Vikaspedia scheme PDFs.
 
-```text
+The application combines:
+
+-   Playwright browser automation for PDF discovery/download
+-   PyMuPDF for PDF text extraction
+-   Tesseract OCR for scanned/image PDFs
+-   Text chunking and OpenAI embeddings
+-   FAISS vector search
+-   RAG-based answer generation
+-   Self-RAG routing
+-   Low-request optimization
+-   Serper live web-search fallback
+-   PDF and web source citations
+-   Safe error handling
+-   Retrieval evaluation
+-   LangSmith monitoring
+-   Streamlit customer and Developer Version interfaces
+
+The current frozen scope contains 11 features:
+
+    \# Feature                    Status
+  ---- -------------------------- --------------------------
+     1 PDF Scraper                PASS
+     2 OCR Processing             PASS
+     3 FAISS Vector Database      PASS
+     4 RAG Chatbot                PASS
+     5 Self-RAG                   PASS
+     6 Low-Request Optimization   PASS
+    11 PDF Source Citations       PASS
+    12 Web Search Fallback        PASS
+    14 Error Handling             PASS
+    15 Evaluation Framework       PASS --- Retrieval 10/10
+    16 LangSmith Monitoring       PASS
+
+------------------------------------------------------------------------
+
+# 2. What Problem Does This Project Solve?
+
+Farmers may ask:
+
+-   What is PM-KISAN?
+-   What benefits are available under crop insurance?
+-   What support is available for irrigation?
+-   What subsidies are available?
+-   What agriculture schemes are available?
+-   What are the latest farmer scheme updates?
+
+A normal LLM alone is not ideal because it may not know the
+application's curated documents or may not have current information.
+
+This project uses **RAG** to ground answers in retrieved documents and
+**web fallback** for current information.
+
+The simplest mental model is:
+
+``` text
+User Question
+      |
+      v
+Is it agriculture related?
+      |
+      +---- NO ----> Friendly out-of-scope response
+      |
+     YES
+      |
+      v
+Can the PDF knowledge base answer it?
+      |
+      +---- YES ---> FAISS ---> PDF context ---> LLM
+      |
+      +---- NO ----> Serper ---> Web context ---> LLM
+                                      |
+                                      v
+                              Answer + Sources
+```
+
+------------------------------------------------------------------------
+
+# 3. Architecture
+
+``` text
+                         +----------------------+
+                         |      Streamlit UI    |
+                         |    app_adviser.py    |
+                         +----------+-----------+
+                                    |
+                                    v
+                         +----------------------+
+                         |       Self-RAG        |
+                         |    rag/self_rag.py   |
+                         +----------+-----------+
+                                    |
+                       +------------+------------+
+                       |                         |
+                       v                         v
+                 Scope / Routing          Retrieval / Freshness
+                       |                         |
+             +---------+---------+       +-------+-------+
+             |                   |       |               |
+          Out of Scope         Valid  Strong PDF      Weak/current
+             |                   |       |               |
+             v                   v       v               v
+          Message             FAISS    LLM            Serper
+                                     \                   /
+                                      \                 /
+                                       +-------+-------+
+                                               |
+                                               v
+                                         OpenAI LLM
+                                               |
+                                               v
+                                      Answer + Citations
+                                               |
+                                               v
+                                          LangSmith
+```
+
+------------------------------------------------------------------------
+
+# 4. End-to-End Data Flow
+
+## 4.1 Knowledge-building flow
+
+``` text
 Vikaspedia Farmer Schemes
-        |
-        v
-Detect Pagination
-        |
-        v
-Pages 1 ... N
-        |
-        v
-Extract Scheme Names
-        |
-        v
-Click Scheme Card
-        |
-        v
-Individual Scheme Page
-        |
-        v
-Download as PDF
-        |
-        v
-downloads/*.pdf
+          |
+          v
+      Playwright
+          |
+          v
+       PDF files
+          |
+          v
+    PyMuPDF extraction
+          |
+          +---- enough text ----> extracted text
+          |
+          +---- scanned PDF ----> Tesseract OCR
+                                      |
+                                      v
+                                  extracted text
+                                      |
+                                      v
+                                  Text chunks
+                                      |
+                                      v
+                            OpenAI embeddings
+                                      |
+                                      v
+                                   FAISS
 ```
 
-The currently tested Vikaspedia page exposes 5 pagination pages and the tests identified 27 actual schemes. UI items such as `Lets Connect`, `Let's Connect`, and `menu` are filtered out.
+## 4.2 Question-answering flow
 
-## 2. Technology Stack
-
-- **Python** - application language
-- **Playwright** - browser automation and PDF download
-- **Chromium** - browser used by Playwright
-- **Streamlit** - web interface
-- **Pytest** - testing framework
-
-## 3. Project Structure
-
-```text
-vikaspedia-scraper/
-|
-|-- .venv/
-|-- app.py
-|
-|-- scraper/
-|   |-- __init__.py
-|   |-- vikaspedia.py
-|   `-- downloader.py
-|
-|-- downloads/
-|   |-- .gitkeep
-|   `-- *.pdf
-|
-|-- tests/
-|   |-- test_pagination.py
-|   `-- test_pdf_download.py
-|
-|-- requirements.txt
-|-- .gitignore
-`-- README.md
+``` text
+User question
+      |
+      v
+Scope check
+      |
+      +---- unrelated ----> OUT_OF_SCOPE
+      |
+      v
+Self-RAG decision
+      |
+      +---- reliable PDF evidence ----> Generate from PDF
+      |
+      +---- current/weak evidence ----> Serper web search
+                                            |
+                                            v
+                                     Generate from web
+                                            |
+                                            v
+                                  Answer + source list
 ```
 
-### File responsibilities
+------------------------------------------------------------------------
 
-| File | Purpose |
-|---|---|
-| `app.py` | Streamlit UI |
-| `scraper/vikaspedia.py` | Pagination, scheme extraction and individual URL discovery |
-| `scraper/downloader.py` | PDF download and retry logic |
-| `scraper/__init__.py` | Python package initialization |
-| `tests/test_pagination.py` | Pagination and scheme extraction test |
-| `tests/test_pdf_download.py` | PDF download test |
-| `requirements.txt` | Dependencies |
-| `.gitignore` | Files excluded from Git |
-| `downloads/` | Local PDF output |
+# 5. Technology Stack
 
-## 4. Prerequisites
+## Python
 
-Recommended environment:
+Main programming language.
 
-- Windows 10/11
-- Python 3.10+
-- Visual Studio Code
-- Internet connection
-- Git (optional)
+Why:
 
-## 5. Create the Virtual Environment
+-   Easy for beginners
+-   Strong AI ecosystem
+-   Excellent automation libraries
+-   Easy integration with Streamlit and LangChain
 
-From the project directory:
+## Streamlit
 
-```bat
-python -m venv .venv
+Provides the web application UI.
+
+Run:
+
+``` cmd
+streamlit run app_adviser.py
 ```
 
-Activate it in Windows CMD:
+## Playwright
 
-```bat
-.venv\Scripts\activate
+Automates the Vikaspedia website.
+
+It handles:
+
+1.  Opening the Farmer Schemes page
+2.  Pagination
+3.  Scheme-card discovery
+4.  Opening scheme pages
+5.  Clicking Download as PDF
+6.  Capturing downloads
+7.  Saving PDFs locally
+
+## PyMuPDF
+
+Reads PDF pages and attempts normal text extraction.
+
+## Tesseract OCR
+
+Handles scanned/image-based PDF pages when normal extraction produces
+insufficient text.
+
+Windows installation:
+
+``` cmd
+winget install UB-Mannheim.TesseractOCR
 ```
 
-PowerShell:
+Verification:
 
-```powershell
-.venv\Scripts\Activate.ps1
+``` cmd
+"C:\Program Files\Tesseract-OCR\tesseract.exe" --version
 ```
 
-You should see `(.venv)` in the terminal.
+## FAISS
 
-## 6. Install Dependencies
+Local vector similarity search engine.
 
-```bat
-python -m pip install --upgrade pip
+It allows semantic search instead of relying only on exact keywords.
+
+## OpenAI Embeddings
+
+The validated embedding model is:
+
+``` text
+text-embedding-3-small
+```
+
+It converts document chunks and questions into vectors.
+
+## OpenAI LLM
+
+The validated generation model is:
+
+``` text
+gpt-4.1-mini
+```
+
+The LLM generates the final grounded response.
+
+## LangChain / LangGraph
+
+LangChain integrates the LLM/retrieval components.
+
+LangGraph represents the Self-RAG decision flow as explicit nodes.
+
+## Serper
+
+Provides live Google search for the web fallback.
+
+Environment variable:
+
+``` env
+SERPER_API_KEY=your-serper-key
+```
+
+## LangSmith
+
+Provides observability for LangGraph and LLM execution.
+
+It captures:
+
+-   Nodes
+-   Inputs/outputs
+-   Latency
+-   Token usage
+-   Cost
+-   Tags
+-   Metadata
+
+------------------------------------------------------------------------
+
+# 6. RAG Explained for Beginners
+
+RAG means **Retrieval-Augmented Generation**.
+
+Without RAG:
+
+``` text
+Question ---> LLM ---> Answer
+```
+
+With RAG:
+
+``` text
+Question
+   |
+   v
+Search knowledge base
+   |
+   v
+Relevant evidence
+   |
+   v
+LLM + evidence
+   |
+   v
+Answer
+```
+
+The important idea is that the LLM is given relevant application data
+before generating the answer.
+
+This reduces the risk of answering from unsupported knowledge.
+
+------------------------------------------------------------------------
+
+# 7. Embeddings and FAISS Explained
+
+An embedding converts text into a numerical vector representing semantic
+meaning.
+
+For example:
+
+``` text
+"crop insurance benefits"
+          |
+          v
+     embedding vector
+```
+
+A question is embedded in the same way.
+
+FAISS compares the question vector with document vectors and retrieves
+similar chunks.
+
+``` text
+Question vector
+       |
+       v
+     FAISS
+       |
+       +--> Chunk A
+       +--> Chunk B
+       +--> Chunk C
+```
+
+This is why a question such as:
+
+``` text
+"What financial protection do farmers get for crop loss?"
+```
+
+can retrieve information from a document discussing crop insurance even
+when the wording is different.
+
+------------------------------------------------------------------------
+
+# 8. OCR Strategy
+
+Many Vikaspedia PDFs are scanned rather than text-native.
+
+Therefore the indexer uses a hybrid strategy:
+
+``` text
+PDF page
+   |
+   v
+PyMuPDF text extraction
+   |
+   +---- >= usable text ----> use extracted text
+   |
+   +---- insufficient ------> render page image
+                                  |
+                                  v
+                              Tesseract
+                                  |
+                                  v
+                              OCR text
+```
+
+This is important because relying only on `pypdf`/PyMuPDF text
+extraction would leave many scanned pages effectively empty.
+
+The validated dataset contained approximately:
+
+-   23 PDFs
+-   80 original pages
+-   77 documents/pages with usable text
+-   approximately 101,265 extracted characters
+
+These are validation-time values and can change when the source
+collection is refreshed.
+
+------------------------------------------------------------------------
+
+# 9. Chunking
+
+Whole PDFs are not sent to the LLM.
+
+Documents are split into smaller text chunks.
+
+Benefits:
+
+-   Better retrieval precision
+-   Smaller prompts
+-   Lower token usage
+-   Lower cost
+-   Less irrelevant context
+
+Each chunk retains metadata such as:
+
+``` text
+Source PDF
+Page number
+```
+
+This metadata is later used for citations.
+
+------------------------------------------------------------------------
+
+# 10. Self-RAG
+
+Self-RAG adds decision logic around normal RAG.
+
+This project uses it for three major decisions:
+
+### Decision 1 --- Scope
+
+Is the question about agriculture/farmer support?
+
+Example:
+
+``` text
+What is PM-KISAN?
+```
+
+Valid.
+
+Example:
+
+``` text
+Who won yesterday's cricket match?
+```
+
+Out of scope.
+
+### Decision 2 --- Evidence
+
+Does the local PDF knowledge base contain sufficiently relevant
+information?
+
+If yes:
+
+``` text
+PDF evidence ---> LLM
+```
+
+If no:
+
+``` text
+Serper ---> LLM
+```
+
+### Decision 3 --- Freshness
+
+Questions containing update/current language are routed toward live
+search.
+
+Examples include:
+
+``` text
+latest
+recent
+updates
+announced
+announcement
+current
+today
+this month
+this year
+```
+
+A specific current year combined with update language can also trigger
+the live-search route.
+
+------------------------------------------------------------------------
+
+# 11. Low-Request Optimization
+
+An early Self-RAG design could use an LLM for every step:
+
+``` text
+LLM scope classification
+LLM document grading
+LLM query rewrite
+LLM generation
+LLM answer grading
+```
+
+That creates unnecessary API requests.
+
+This project deliberately moves practical decisions to deterministic
+logic.
+
+Normal flow is approximately:
+
+``` text
+Embedding request
+      +
+FAISS retrieval
+      +
+One main LLM generation request
+```
+
+Web fallback adds the search request:
+
+``` text
+Serper search
+      +
+One main LLM generation request
+```
+
+The application also limits:
+
+-   Number of retrieved documents
+-   PDF context length
+-   Web result count
+-   Web context length
+
+This reduces cost, latency and rate-limit pressure.
+
+------------------------------------------------------------------------
+
+# 12. Web Search Fallback
+
+The application uses Serper when local PDF evidence is insufficient or
+the question clearly requires current information.
+
+Example:
+
+``` text
+What farmer scheme updates were announced in India
+in September 2026?
+```
+
+The local PDF collection cannot be assumed to contain every September
+2026 announcement.
+
+The routing becomes:
+
+``` text
+Question
+   |
+   v
+Freshness detection
+   |
+   v
+No static PDF answer
+   |
+   v
+Serper
+   |
+   v
+Search results
+   |
+   v
+LLM
+   |
+   v
+Answer + WEB sources
+```
+
+Validated result:
+
+``` text
+WEB: Demand for Grants...
+WEB: 23rd Instalment of PM-KISAN...
+WEB: Agriculture schemes...
+```
+
+This confirms Feature 12 is working.
+
+------------------------------------------------------------------------
+
+# 13. Source Citations
+
+PDF sources are displayed with filename and page number.
+
+Example:
+
+``` text
+PDF: Pradhan_Mantri_Kisan_Samman_Nidhi.pdf — page 1
+```
+
+Web sources are displayed with title and URL.
+
+Example:
+
+``` text
+WEB: 23rd Instalment of PM-KISAN — https://...
+```
+
+The source metadata comes from retrieved evidence rather than being
+invented as part of the answer.
+
+------------------------------------------------------------------------
+
+# 14. Error Handling
+
+The application converts technical provider failures into safe customer
+messages.
+
+Examples of handled categories:
+
+-   Rate limit
+-   Quota
+-   Authentication
+-   Timeout
+-   Retrieval error
+-   Empty response
+-   Generic LLM error
+
+Customer example:
+
+``` text
+The AI service is temporarily unavailable because its
+usage limit has been reached. Please try again later.
+```
+
+The application avoids exposing raw provider responses or credentials to
+normal users.
+
+Developer users can inspect controlled diagnostic details in Developer
+Version.
+
+------------------------------------------------------------------------
+
+# 15. Developer Version --- Complete Explanation
+
+The Developer Version is designed for **testing, debugging, tuning and
+demonstrating the architecture**.
+
+The customer interface should answer questions simply.
+
+The developer interface must answer:
+
+> What happened internally when this question was asked?
+
+## 15.1 Developer Model Selector
+
+Allows developers to select the configured generation model.
+
+Validated model:
+
+``` text
+gpt-4.1-mini
+```
+
+Model choice affects:
+
+-   Quality
+-   Latency
+-   Token usage
+-   Cost
+
+For a production deployment, model selection should normally be
+controlled by configuration.
+
+## 15.2 Temperature
+
+Controls response variability.
+
+Lower values are generally preferable for factual advisory applications.
+
+``` text
+Lower temperature
+    |
+    +--> More deterministic
+    +--> Better for factual responses
+```
+
+Higher values can increase variation but are generally less desirable
+for strict factual scheme information.
+
+## 15.3 Retrieval `k`
+
+Controls how many candidate documents/chunks are retrieved.
+
+Example:
+
+``` text
+k = 4
+```
+
+Higher `k` may improve recall but can increase:
+
+-   Irrelevant context
+-   Prompt size
+-   Token usage
+-   Latency
+
+The developer can tune this without changing the core code.
+
+## 15.4 Web Max Results
+
+Controls how many search results are considered.
+
+More results can provide broader coverage but can also introduce
+conflicting or low-quality information.
+
+A small bounded result count keeps the prompt manageable.
+
+## 15.5 Rebuild FAISS
+
+Used after the source documents change.
+
+Use it when:
+
+-   New PDFs are downloaded
+-   PDFs are replaced
+-   OCR logic changes
+-   Chunking changes
+-   The index is missing
+
+Command equivalent:
+
+``` cmd
+python -m rag.indexer
+```
+
+Do not rebuild the index for every chat question.
+
+## 15.6 Diagnostics
+
+The developer interface exposes operational status such as:
+
+``` text
+FAISS index: available
+Serper web search: Enabled
+```
+
+The API key itself is never displayed.
+
+If:
+
+``` text
+Serper web search: Not configured
+```
+
+the web fallback cannot operate.
+
+## 15.7 Developer Chat
+
+Developer Chat is used for controlled testing.
+
+### PDF test
+
+``` text
+What is PM Kisan Samman Nidhi and what benefits does it provide?
+```
+
+Expected:
+
+``` text
+PDF sources
+```
+
+### Web fallback test
+
+``` text
+What farmer scheme updates were announced in India in September 2026?
+```
+
+Expected:
+
+``` text
+Web fallback used
+WEB sources
+```
+
+### Out-of-scope test
+
+``` text
+who won yesterday cricket match
+```
+
+Expected:
+
+``` text
+Agriculture/farmer-support scope message
+```
+
+This confirms that unrelated questions are rejected before unnecessary
+retrieval/search.
+
+## 15.8 Developer Error Details
+
+When an error occurs, Developer Version can show:
+
+``` text
+Error type
+Technical exception
+```
+
+The customer still receives a safe friendly message.
+
+## 15.9 LangSmith Monitoring
+
+LangSmith provides a deeper view than the Streamlit diagnostics.
+
+A validated trace showed:
+
+``` text
+LangGraph
+   |
+   +-- scope
+   +-- retrieve
+   +-- grade_documents
+   +-- web_search
+   +-- generate
+   |     |
+   |     +-- ChatOpenAI
+   |
+   +-- grade_answer
+```
+
+The validated trace also showed approximately:
+
+``` text
+Total execution: 6.33 seconds
+Tokens: 1.411K
+Cost: approximately $0.0007
+Model: gpt-4.1-mini
+```
+
+The application tags traces with:
+
+``` text
+agri-farmer-adviser
+rag-generation
+```
+
+and metadata identifying:
+
+``` text
+vikaspedia-agri-farmer-adviser
+```
+
+This is useful for production troubleshooting and cost/performance
+analysis.
+
+------------------------------------------------------------------------
+
+# 16. Folder Structure
+
+``` text
+vikaspedia-agri-farmer-adviser/
+|
++-- app_adviser.py
++-- requirements.txt
++-- .env
++-- .env.example
++-- README.md
++-- PRODUCTION_CHECKLIST.md
++-- PHASE3_UI.md
++-- pytest.ini
+|
++-- config/
+|   +-- production_defaults.json
+|
++-- prompts/
+|   +-- agri_farmer_adviser.md
+|
++-- scraper/
+|   +-- __init__.py
+|   +-- vikaspedia.py
+|   +-- downloader.py
+|
++-- rag/
+|   +-- __init__.py
+|   +-- indexer.py
+|   +-- index_manager.py
+|   +-- llm.py
+|   +-- prompts.py
+|   +-- self_rag.py
+|   +-- web_search.py
+|
++-- tests/
+|   +-- test_downloader.py
+|   +-- test_indexer.py
+|   +-- test_pagination.py
+|   +-- test_pdf_download.py
+|   +-- test_retrieval.py
+|   +-- test_scope.py
+|   +-- test_web_search_serper.py
+|
++-- evals/
+|   +-- evaluation_dataset.json
+|   +-- evaluate.py
+|
++-- data/
+|   +-- faiss_index/
+|       +-- index.faiss
+|       +-- index.pkl
+|
++-- downloads/
+    +-- *.pdf
+```
+
+------------------------------------------------------------------------
+
+# 17. File-by-File Responsibilities
+
+## `app_adviser.py`
+
+Main Streamlit entry point.
+
+Responsibilities:
+
+-   Customer UI
+-   Developer Version
+-   Chat handling
+-   Streaming
+-   Source display
+-   Safe errors
+-   Developer controls
+-   Diagnostics
+
+Run:
+
+``` cmd
+streamlit run app_adviser.py
+```
+
+## `scraper/vikaspedia.py`
+
+Frozen production browser scraper.
+
+Responsibilities:
+
+-   Farmer Schemes listing
+-   Pagination
+-   Scheme discovery
+-   Scheme navigation
+
+Do not modify it simply to satisfy historical/debug tests.
+
+## `scraper/downloader.py`
+
+Handles PDF download operations.
+
+Also treated as frozen production code.
+
+## `rag/indexer.py`
+
+Builds the searchable knowledge base.
+
+Responsibilities:
+
+-   PDF discovery
+-   Text extraction
+-   OCR fallback
+-   Chunking
+-   Embedding
+-   FAISS index creation
+
+Run:
+
+``` cmd
+python -m rag.indexer
+```
+
+## `rag/index_manager.py`
+
+Loads/manages the persisted FAISS index.
+
+## `rag/llm.py`
+
+Creates/configures the LLM and LangSmith tracing configuration.
+
+## `rag/prompts.py`
+
+Stores RAG prompt definitions separately from application logic.
+
+## `rag/self_rag.py`
+
+Core orchestration component.
+
+Responsibilities:
+
+-   Scope routing
+-   Retrieval
+-   Relevance gate
+-   Freshness routing
+-   Web fallback
+-   Context formatting
+-   Generation
+-   Answer grading
+-   Error classification
+-   LangGraph workflow
+
+## `rag/web_search.py`
+
+Web-search abstraction.
+
+Current provider:
+
+``` text
+Serper
+```
+
+It normalizes results into:
+
+``` text
+title
+url
+content
+```
+
+Keeping the provider isolated makes future provider replacement easier.
+
+## `config/production_defaults.json`
+
+Stores application defaults/configuration values.
+
+## `prompts/agri_farmer_adviser.md`
+
+Domain-level adviser instructions.
+
+## `evals/evaluation_dataset.json`
+
+Contains predefined evaluation questions and expected behavior.
+
+## `evals/evaluate.py`
+
+Runs retrieval/full evaluation.
+
+Retrieval-only:
+
+``` cmd
+python -m evals.evaluate --retrieval-only
+```
+
+Full:
+
+``` cmd
+python -m evals.evaluate
+```
+
+Full evaluation uses LLM requests, so avoid unnecessary repeated runs
+when API limits are tight.
+
+## `tests/`
+
+Unit/integration tests created during development.
+
+Some historical tests may reflect earlier interfaces and therefore are
+not the sole production acceptance criterion.
+
+The acceptance decision should prioritize:
+
+-   End-to-end application behavior
+-   Evaluation results
+-   Source validation
+-   Web fallback validation
+-   Error handling
+-   LangSmith tracing
+
+## `data/faiss_index/`
+
+Persisted FAISS files:
+
+``` text
+index.faiss
+index.pkl
+```
+
+## `downloads/`
+
+Downloaded source PDFs.
+
+------------------------------------------------------------------------
+
+# 18. Environment Configuration
+
+Create `.env`:
+
+``` env
+OPENAI_API_KEY=your-openai-key
+
+SERPER_API_KEY=your-serper-key
+
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=your-langsmith-key
+LANGSMITH_PROJECT=vikaspedia-agri-farmer-adviser
+```
+
+Never commit real keys.
+
+`.env` should be in `.gitignore`.
+
+Use `.env.example` to document required variables without secrets.
+
+------------------------------------------------------------------------
+
+# 19. Installation
+
+Create virtual environment:
+
+``` cmd
+python -m venv venv
+```
+
+Activate:
+
+``` cmd
+venv\Scripts\activate
+```
+
+Install Python dependencies:
+
+``` cmd
 pip install -r requirements.txt
 ```
 
-Install the Playwright Chromium browser:
+Install Tesseract:
 
-```bat
-playwright install chromium
+``` cmd
+winget install UB-Mannheim.TesseractOCR
 ```
 
 Verify:
 
-```bat
-playwright --version
+``` cmd
+"C:\Program Files\Tesseract-OCR\tesseract.exe" --version
 ```
 
-## 7. Vikaspedia URL
+------------------------------------------------------------------------
 
-Default URL:
+# 20. Build FAISS
 
-```text
-https://schemes.vikaspedia.in/viewcontent/schemesall/schemes-for-farmers?lgn=en
+After PDFs are present in `downloads/`:
+
+``` cmd
+python -m rag.indexer
 ```
 
-The same URL is pre-filled in the Streamlit application, but the user can provide a URL through the UI.
+The generated index is stored under:
 
-## 8. Why Two-Level Navigation Is Needed
-
-The scheme listing does not expose every PDF as a direct PDF link.
-
-The application therefore follows:
-
-```text
-Listing Page
-    |
-    +--> Scheme Card
-            |
-            v
-       Individual Scheme
-            |
-            +--> Download as PDF
-                    |
-                    v
-                   PDF
+``` text
+data/faiss_index/
 ```
 
-For example, clicking `Pradhan Mantri Kisan Samman Nidhi` opens its individual Vikaspedia page. The PDF is then downloaded from that page.
+------------------------------------------------------------------------
 
-## 9. Important HTML Discovery
+# 21. Start the Application
 
-The site uses a React/Material UI interface.
-
-The visible scheme name may be truncated:
-
-```text
-Pradhan Mantri Kisan Samman Ni...
+``` cmd
+streamlit run app_adviser.py
 ```
 
-The full name is stored in the HTML `title` attribute:
+Stop:
 
-```html
-<h6 title="Pradhan Mantri Kisan Samman Nidhi">
+``` text
+Ctrl+C
 ```
 
-Therefore the scraper uses:
+------------------------------------------------------------------------
 
-```css
-h6[title]
+# 22. Testing
+
+## Test A --- PDF RAG
+
+Question:
+
+``` text
+What is PM Kisan Samman Nidhi and what benefits does it provide?
 ```
 
-and reads the `title` attribute.
+Expected:
 
-The scheme card itself does not necessarily contain an ordinary `href`. The scraper finds the `h6[title]` and its nearest ancestor `div[@title]`, then clicks that Material UI card.
+-   Grounded answer
+-   PDF source citations
 
-## 10. Pagination
+## Test B --- Web fallback
 
-The scraper detects visible numeric controls rather than permanently hard-coding page numbers.
+Question:
 
-The current test detected:
-
-```text
-1 2 3 4 5
+``` text
+What farmer scheme updates were announced in India in September 2026?
 ```
 
-The scraper processes each detected page and extracts its schemes.
+Expected:
 
-## 11. Non-Scheme Filtering
+-   Current-information routing
+-   Serper search
+-   `WEB:` sources
 
-The generic `h6[title]` selector also finds some UI elements.
+## Test C --- Out of scope
 
-These are excluded:
+Question:
 
-```python
-EXCLUDED_TITLES = {
-    "Lets Connect",
-    "Let's Connect",
-    "menu",
-}
+``` text
+who won yesterday cricket match
 ```
 
-This produced 27 actual schemes in the successful pagination test.
+Expected:
 
-The live website can change, so the actual count should always be determined by running the scraper.
+-   Friendly agriculture-scope response
+-   No unnecessary web search
 
-## 12. Test Pagination and Scheme Extraction
+## Test D --- Retrieval evaluation
 
-Run:
-
-```bat
-python tests\test_pagination.py
+``` cmd
+python -m evals.evaluate --retrieval-only
 ```
 
-Expected important output:
+Validated:
 
-```text
-VISIBLE NUMERIC PAGINATION CONTROLS: [1, 2, 3, 4, 5]
-
-PAGE 1 - ...
-PAGE 2 - ...
-PAGE 3 - ...
-PAGE 4 - ...
-PAGE 5 - ...
-
-TOTAL UNIQUE SCHEMES FOUND: 27
+``` text
+Passed: 10/10
+Pass rate: 100.0%
 ```
 
-The browser is intentionally visible in this standalone test so that Playwright activity can be observed.
+## Test E --- LangSmith
 
-## 13. Test PDF Download
+Generate a question and verify a trace contains nodes such as:
 
-Run:
-
-```bat
-python tests\test_pdf_download.py
+``` text
+scope
+retrieve
+grade_documents
+generate
+ChatOpenAI
+grade_answer
 ```
 
-The test uses the confirmed individual scheme URL for:
+For a web-fallback question:
 
-```text
-Pradhan Mantri Kisan Samman Nidhi
+``` text
+web_search
 ```
 
-It locates:
+should also appear.
 
-```html
-<button title="Download as PDF">
+------------------------------------------------------------------------
+
+# 23. Why Some Technologies Were Chosen
+
+  --------------------------------------------------------------------------
+  Requirement             Selected technology        Reason
+  ----------------------- -------------------------- -----------------------
+  Browser automation      Playwright                 Reliable modern browser
+                                                     automation
+
+  PDF extraction          PyMuPDF                    Fast local PDF
+                                                     processing
+
+  Scanned PDF extraction  Tesseract                  OCR fallback
+
+  Vector search           FAISS                      Local, fast and simple
+
+  Embeddings              OpenAI                     Compact semantic
+                          `text-embedding-3-small`   embedding
+
+  LLM                     `gpt-4.1-mini`             Good balance of
+                                                     quality/cost
+
+  RAG orchestration       LangChain                  AI integration
+
+  Workflow                LangGraph                  Explicit Self-RAG graph
+
+  UI                      Streamlit                  Python-only rapid
+                                                     application UI
+
+  Web fallback            Serper                     Live search with
+                                                     practical free
+                                                     development option
+
+  Monitoring              LangSmith                  Tracing and
+                                                     observability
+  --------------------------------------------------------------------------
+
+------------------------------------------------------------------------
+
+# 24. Security
+
+Never place credentials in source code.
+
+Bad:
+
+``` python
+OPENAI_API_KEY = "real-key"
 ```
 
-and captures the browser download.
+Good:
 
-A successful test creates:
-
-```text
-downloads/
-`-- Pradhan_Mantri_Kisan_Samman_Nidhi.pdf
+``` env
+OPENAI_API_KEY=real-key
 ```
 
-The test verifies that the file exists and has a non-zero size.
+Do not commit:
 
-## 14. Retry Logic
-
-The PDF downloader uses three attempts by default:
-
-```text
-Attempt 1
-   |
-   X
-   |
-Retry
-   |
-Attempt 2
-   |
-   X
-   |
-Retry
-   |
-Attempt 3
-```
-
-If all attempts fail, the application reports the error instead of silently ignoring it.
-
-## 15. Filename Handling
-
-Windows does not allow certain characters in filenames.
-
-The downloader replaces unsafe characters such as:
-
-```text
-< > : " / \ | ? *
-```
-
-with `_`.
-
-Whitespace is also normalized.
-
-Example:
-
-```text
-Pradhan Mantri Kisan Samman Nidhi
-```
-
-becomes:
-
-```text
-Pradhan_Mantri_Kisan_Samman_Nidhi.pdf
-```
-
-## 16. Run the Streamlit Application
-
-After the two standalone tests pass:
-
-```bat
-streamlit run app.py
-```
-
-Streamlit will display a local address in the terminal. Open that address in your browser.
-
-## 17. Streamlit Features
-
-The application provides:
-
-### URL input
-
-Enter the Farmer Schemes listing URL.
-
-### Scan All Schemes
-
-The application starts Playwright and discovers:
-
-- pagination pages
-- scheme names
-- individual scheme URLs
-
-### Select All
-
-Select all discovered schemes.
-
-### Individual Download
-
-Each scheme has its own Download button.
-
-### Download Selected
-
-Download only the checked schemes.
-
-### Download All
-
-Download every discovered scheme.
-
-### Progress Bar
-
-Bulk downloads display progress.
-
-### Retry
-
-Each PDF gets multiple attempts.
-
-### Error Handling
-
-Failed downloads are reported without stopping the complete batch.
-
-## 18. Recommended Testing Order
-
-Do not immediately start with Download All.
-
-Use this order:
-
-### Step 1
-
-```bat
-python tests\test_pagination.py
-```
-
-Confirm that pagination and schemes are detected.
-
-### Step 2
-
-```bat
-python tests\test_pdf_download.py
-```
-
-Confirm that a PDF is created.
-
-### Step 3
-
-```bat
-streamlit run app.py
-```
-
-Click:
-
-```text
-Scan All Schemes
-```
-
-### Step 4
-
-Download one scheme.
-
-### Step 5
-
-Select 2-3 schemes and click:
-
-```text
-Download Selected
-```
-
-### Step 6
-
-After the smaller test succeeds, click:
-
-```text
-Download All
-```
-
-## 19. Download Directory
-
-All PDFs are saved to:
-
-```text
-downloads/
-```
-
-Example:
-
-```text
-downloads/
-|-- Agriculture_Infrastructure_Fund.pdf
-|-- Crop_insurance_schemes.pdf
-|-- Krishi_UDAN_scheme.pdf
-|-- National_Mission_on_Natural_Farming.pdf
-`-- Pradhan_Mantri_Kisan_Samman_Nidhi.pdf
-```
-
-Downloaded PDFs are excluded from Git using:
-
-```text
-downloads/*.pdf
-```
-
-This keeps the repository focused on source code rather than generated documents.
-
-## 20. Architecture
-
-```text
-                    User
-                     |
-                     v
-              +-------------+
-              |  Streamlit  |
-              |    app.py   |
-              +------+------+
-                     |
-          +----------+----------+
-          |                     |
-          v                     v
-+-------------------+   +-------------------+
-| VikaspediaScraper |   |  PDFDownloader    |
-| vikaspedia.py     |   |  downloader.py    |
-+---------+---------+   +---------+---------+
-          |                       |
-          v                       v
- Pagination + URLs        Download as PDF
-          |                       |
-          +-----------+-----------+
-                      |
-                      v
-                downloads/*.pdf
-```
-
-## 21. Why Responsibilities Are Separated
-
-`app.py` is responsible for the UI.
-
-`vikaspedia.py` is responsible for finding schemes and their individual pages.
-
-`downloader.py` is responsible for downloading PDFs.
-
-This makes the project easier to debug and extend.
-
-For example, the PDF downloader can later be reused by another application without copying the Streamlit code.
-
-## 22. Future RAG Integration
-
-The downloaded PDFs are intended to become the document source for a future RAG application.
-
-Planned pipeline:
-
-```text
-Vikaspedia
-    |
-    v
-Playwright Scraper
-    |
-    v
-Scheme PDFs
-    |
-    v
-PDF Text Extraction
-    |
-    v
-Document Chunking
-    |
-    v
-Embeddings
-    |
-    v
-Vector Database
-    |
-    v
-Retriever
-    |
-    v
-LLM
-    |
-    v
-Question + Answer
-```
-
-Example future question:
-
-```text
-What are the eligibility requirements for Pradhan Mantri Kisan Samman Nidhi?
-```
-
-The RAG system would retrieve relevant content from the downloaded scheme documents and use that context to generate an answer.
-
-## 23. Possible Future RAG Structure
-
-```text
-vikaspedia-rag/
-|
-|-- app.py
-|
-|-- scraper/
-|   |-- vikaspedia.py
-|   `-- downloader.py
-|
-|-- documents/
-|   `-- *.pdf
-|
-|-- ingestion/
-|   |-- pdf_loader.py
-|   |-- chunker.py
-|   `-- embeddings.py
-|
-|-- vectorstore/
-|
-|-- rag/
-|   |-- retriever.py
-|   `-- qa.py
-|
-`-- tests/
-```
-
-## 24. Git Setup
-
-If using Git:
-
-```bat
-git init
-```
-
-Configure identity if needed:
-
-```bat
-git config --global user.name "Your Name"
-git config --global user.email "your-email@example.com"
-```
-
-Check:
-
-```bat
-git status
-```
-
-Add source files:
-
-```bat
-git add .
-```
-
-Commit:
-
-```bat
-git commit -m "Build Vikaspedia farmer schemes scraper"
-```
-
-If a GitHub repository already exists:
-
-```bat
-git branch -M main
-git remote add origin YOUR_GITHUB_REPOSITORY_URL
-git push -u origin main
-```
-
-## 25. Git Security
-
-Never commit:
-
-```text
+``` text
 .env
-API keys
-passwords
-access tokens
-private credentials
 ```
 
-If future RAG code uses an API key, keep it in environment variables and add `.env` to `.gitignore`.
+Do not expose API keys in screenshots, GitHub, logs or chat.
 
-## 26. Stop Streamlit
+------------------------------------------------------------------------
 
-In the terminal running Streamlit:
+# 25. Cost and Performance Principles
 
-```text
-Ctrl + C
+The architecture follows several optimization principles:
+
+1.  Reject irrelevant questions early.
+2.  Avoid unnecessary LLM classification calls.
+3.  Limit FAISS retrieval count.
+4.  Limit PDF context.
+5.  Limit web results.
+6.  Limit web context.
+7.  Use one primary generation call.
+8.  Use LangSmith to observe latency/token/cost behavior.
+
+This makes the application easier to operate under API request limits.
+
+------------------------------------------------------------------------
+
+# 26. Future Enhancements
+
+The following are deliberately outside the current frozen scope.
+
+## State-aware answers
+
+Allow:
+
+``` text
+Tamil Nadu
+Karnataka
+Kerala
+Maharashtra
+...
 ```
 
-## 27. Troubleshooting
+and prioritize state-specific schemes.
 
-### Playwright browser missing
+## Farmer profile
 
-Run:
+Potential inputs:
 
-```bat
-playwright install chromium
+``` text
+State
+Crop
+Land size
+Farmer category
+Irrigation type
 ```
 
-### Playwright module missing
+Then recommend suitable schemes.
 
-Activate the virtual environment:
+## Better web-source ranking
 
-```bat
-.venv\Scripts\activate
+Prefer:
+
+``` text
+PIB
+Central government ministries
+State government websites
+Vikaspedia
+Other trusted sources
+```
+
+over blogs/social/commercial sources when possible.
+
+## Scheduled refresh
+
+Automate:
+
+``` text
+Scrape
+  |
+Download
+  |
+OCR
+  |
+Re-index
+```
+
+## Advanced evaluation
+
+Measure:
+
+-   Answer correctness
+-   Faithfulness
+-   Citation correctness
+-   Source quality
+-   Latency
+-   Token usage
+-   Cost
+
+## Authentication
+
+Add login and role-based access for production deployment.
+
+## Voice
+
+Potential architecture:
+
+``` text
+Speech
+  |
+  v
+Speech-to-text
+  |
+  v
+RAG
+  |
+  v
+Text-to-speech
+```
+
+## Persistent conversation memory
+
+Could be added in a future release, but it is not part of the current
+frozen scope.
+
+------------------------------------------------------------------------
+
+# 27. Troubleshooting
+
+## Streamlit does not start
+
+Activate the environment:
+
+``` cmd
+venv\Scripts\activate
 ```
 
 Then:
 
-```bat
-pip install -r requirements.txt
+``` cmd
+streamlit run app_adviser.py
 ```
 
-### Streamlit module missing
+## FAISS index unavailable
 
-```bat
-pip install streamlit
+Run:
+
+``` cmd
+python -m rag.indexer
 ```
 
-### No schemes found
+## OCR unavailable
 
-Check:
+Verify:
 
-1. Internet connection.
-2. Vikaspedia URL opens manually.
-3. `test_pagination.py` works.
-4. The website has not changed its HTML structure.
-
-The current scraper waits for:
-
-```css
-h6[title]
+``` cmd
+"C:\Program Files\Tesseract-OCR\tesseract.exe" --version
 ```
 
-because the site renders its content dynamically.
+## Serper not configured
 
-### PDF timeout
+Verify `.env` contains:
 
-Possible causes:
-
-- Slow connection
-- Temporary website response problem
-- Website structure change
-- Browser timeout
-
-The downloader automatically retries.
-
-### Scan is slow
-
-This is expected because every scheme requires navigation from the listing page to the individual scheme page to discover its URL.
-
-For approximately 27 schemes:
-
-```text
-Listing
-  -> Scheme 1
-  -> Listing
-  -> Scheme 2
-  -> Listing
-  ...
+``` env
+SERPER_API_KEY=your-serper-key
 ```
 
-## 28. Current Project Status
+Restart:
 
-```text
-[✓] Python environment
-[✓] Playwright
-[✓] Chromium
-[✓] Vikaspedia listing page
-[✓] Pagination detection
-[✓] Scheme extraction
-[✓] Non-scheme filtering
-[✓] Scheme card navigation
-[✓] Individual scheme URL discovery
-[✓] Download as PDF detection
-[✓] PDF download
-[✓] Retry handling
-[✓] Streamlit interface
-[✓] Individual download
-[✓] Selected download
-[✓] Download all
-[✓] Progress bar
-[✓] Error handling
-[ ] PDF text extraction
-[ ] Chunking
-[ ] Embeddings
-[ ] Vector database
-[ ] RAG question answering
+``` cmd
+Ctrl+C
+streamlit run app_adviser.py
 ```
 
-## 29. Quick Start
+Developer Version should display:
 
-Fresh Windows setup:
-
-```bat
-cd vikaspedia-scraper
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-playwright install chromium
+``` text
+Serper web search: Enabled
 ```
 
-Test pagination:
+## LangSmith not showing traces
 
-```bat
-python tests\test_pagination.py
+Verify:
+
+``` env
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=your-langsmith-key
+LANGSMITH_PROJECT=vikaspedia-agri-farmer-adviser
 ```
 
-Test PDF:
+Restart the application and generate a new request.
 
-```bat
-python tests\test_pdf_download.py
+## OpenAI 429
+
+A 429 can result from request-rate limits, daily limits, quota or
+billing/spend limits.
+
+Avoid repeated retries when the underlying issue is quota/billing.
+
+The low-request design exists partly to reduce this problem.
+
+------------------------------------------------------------------------
+
+# 28. Developer Learning Guide
+
+A beginner can understand the project in this order:
+
+### Step 1
+
+Learn:
+
+``` text
+Python
 ```
 
-Start application:
+### Step 2
 
-```bat
-streamlit run app.py
+Understand:
+
+``` text
+PDF
+OCR
 ```
 
-## 30. Final End-to-End Design
+### Step 3
 
-```text
-                  VIKASPEDIA
-                       |
-                       v
-              Farmer Schemes Page
-                       |
-                       v
-                 Pagination
-                       |
-          +------------+------------+
-          |            |            |
-        Page 1       Page 2       Page N
-          |            |            |
-          +------------+------------+
-                       |
-                       v
-                 Scheme Cards
-                       |
-                       v
-              Individual Scheme
-                       |
-                       v
-               Download as PDF
-                       |
-                       v
-                  Local PDFs
-                       |
-                       v
-              Future RAG Pipeline
-                       |
-          +------------+------------+
-          |            |            |
-       Extract       Chunk       Embed
-          |            |            |
-          +------------+------------+
-                       |
-                       v
-                 Vector Store
-                       |
-                       v
-                   Retriever
-                       |
-                       v
-                     LLM
-                       |
-                       v
-                  User Answer
+Understand:
+
+``` text
+Embedding
+Vector
+FAISS
 ```
 
-## 31. Important Maintenance Note
+### Step 4
 
-This project relies on the current HTML structure and browser behavior of Vikaspedia.
+Understand:
 
-If Vikaspedia changes:
+``` text
+RAG
+```
 
-- CSS/HTML structure
-- pagination implementation
-- scheme-card structure
-- PDF button
-- navigation behavior
+### Step 5
 
-the Playwright selectors may need to be updated.
+Understand:
 
-The two standalone tests should therefore be run after major website changes before relying on the complete Streamlit application.
+``` text
+LangChain
+```
 
-## 32. Project Goal
+### Step 6
 
-The immediate goal is reliable automated collection of Vikaspedia Farmer Scheme PDFs.
+Understand:
 
-The larger goal is to use those documents as a controlled knowledge source for a RAG application capable of answering questions about farmer schemes using retrieved document content.
+``` text
+LangGraph
+Self-RAG
+```
+
+### Step 7
+
+Understand:
+
+``` text
+Web Search Fallback
+```
+
+### Step 8
+
+Understand:
+
+``` text
+LangSmith
+```
+
+A useful mental model is:
+
+``` text
+Playwright = gets the knowledge
+Tesseract = reads scanned knowledge
+FAISS = finds relevant knowledge
+RAG = gives knowledge to the LLM
+Self-RAG = decides which knowledge path to use
+Serper = supplies live information
+LLM = writes the final answer
+Streamlit = displays the application
+LangSmith = watches what happened
+```
+
+------------------------------------------------------------------------
+
+# 29. Final Architecture in One Diagram
+
+``` text
+                     VIKASPEDIA
+                         |
+                         v
+                 Playwright Scraper
+                         |
+                         v
+                    PDF Files
+                         |
+                         v
+              PyMuPDF + Tesseract
+                         |
+                         v
+                    Text Chunks
+                         |
+                         v
+               OpenAI Embeddings
+                         |
+                         v
+                      FAISS
+                         |
+                         |
+                         v
+User ---> Streamlit ---> Self-RAG
+                           |
+                +----------+----------+
+                |                     |
+          Out of Scope           In Scope
+                |                     |
+                v                     v
+            Response              Decision
+                                      |
+                            +---------+---------+
+                            |                   |
+                       Strong PDF         Current/weak
+                            |                   |
+                            v                   v
+                           PDF               Serper
+                         context           web search
+                            |                   |
+                            +---------+---------+
+                                      |
+                                      v
+                                  OpenAI LLM
+                                      |
+                                      v
+                                Final Answer
+                                      |
+                              +-------+-------+
+                              |               |
+                         PDF Sources      WEB Sources
+                                      |
+                                      v
+                                  LangSmith
+```
+
+------------------------------------------------------------------------
+
+# 30. Final Takeaway
+
+This project demonstrates a complete practical GenAI application rather
+than a simple chatbot.
+
+The most important architectural lessons are:
+
+``` text
+LLM alone
+   !=
+Reliable domain application
+```
+
+Instead:
+
+``` text
+Domain documents
+      +
+OCR
+      +
+Embeddings
+      +
+Vector retrieval
+      +
+RAG
+      +
+Self-RAG routing
+      +
+Live web fallback
+      +
+Source citations
+      +
+Error handling
+      +
+Evaluation
+      +
+Observability
+      =
+Production-oriented GenAI application
+```
+
+The project therefore demonstrates the full journey from **source-data
+acquisition to retrieval, reasoning/routing, grounded generation,
+evaluation and monitoring**.

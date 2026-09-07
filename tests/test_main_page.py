@@ -109,8 +109,6 @@ with sync_playwright() as p:
                 e
             )
 
-    input(
-        "\nPress ENTER to close..."
-    )
+   
 
     browser.close()

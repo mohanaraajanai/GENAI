@@ -1,0 +1,134 @@
+{
+  "passed": 10,
+  "total": 10,
+  "pass_rate": 100.0,
+  "results": [
+    {
+      "question": "What is PM Kisan Samman Nidhi?",
+      "expected_scope": "IN_SCOPE",
+      "retrieved": true,
+      "sources": [
+        "Pradhan_Mantri_Kisan_Samman_Nidhi.pdf page 1",
+        "PM_Kisan_Maan_Dhan_Yojana.pdf page 1",
+        "Pradhan_Mantri_Kisan_Samman_Nidhi.pdf page 2",
+        "Pradhan_Mantri_Krishi_Sinchai_Yojana.pdf page 1"
+      ],
+      "pass": true,
+      "expected_behavior": "Answer from the downloaded scheme PDF and cite the source."
+    },
+    {
+      "question": "What is Pradhan Mantri Fasal Bima Yojana?",
+      "expected_scope": "IN_SCOPE",
+      "retrieved": true,
+      "sources": [
+        "Crop_insurance_schemes.pdf page 4",
+        "PM_Kisan_Maan_Dhan_Yojana.pdf page 1",
+        "Crop_insurance_schemes.pdf page 1",
+        "Livestock_Insurance_-_An_introduction.pdf page 4"
+      ],
+      "pass": true,
+      "expected_behavior": "Answer from the crop insurance PDF and cite the PDF/page."
+    },
+    {
+      "question": "What benefits are available under crop insurance schemes?",
+      "expected_scope": "IN_SCOPE",
+      "retrieved": true,
+      "sources": [
+        "Crop_insurance_schemes.pdf page 1",
+        "Credit_facility_for_farmers.pdf page 1",
+        "Crop_insurance_schemes.pdf page 4",
+        "Livestock_Insurance_-_An_introduction.pdf page 1"
+      ],
+      "pass": true,
+      "expected_behavior": "Retrieve crop insurance evidence and avoid unsupported benefits."
+    },
+    {
+      "question": "What is Agriculture Infrastructure Fund?",
+      "expected_scope": "IN_SCOPE",
+      "retrieved": true,
+      "sources": [
+        "Agriculture_Infrastructure_Fund.pdf page 1",
+        "Agriculture_Infrastructure_Fund.pdf page 3",
+        "Animal_Husbandry_Infrastructure_Development_Fund.pdf page 1"
+      ],
+      "pass": true,
+      "expected_behavior": "Answer from the Agriculture Infrastructure Fund PDF and cite the source."
+    },
+    {
+      "question": "What farmer schemes are available?",
+      "expected_scope": "IN_SCOPE",
+      "retrieved": true,
+      "sources": [
+        "Credit_facility_for_farmers.pdf page 1",
+        "PM_Kisan_Maan_Dhan_Yojana.pdf page 2",
+        "Animal_Husbandry_Infrastructure_Development_Fund.pdf page 3",
+        "Crop_insurance_schemes.pdf page 1"
+      ],
+      "pass": true,
+      "expected_behavior": "Provide a concise answer from the available farmer-scheme knowledge base."
+    },
+    {
+      "question": "What support is available for irrigation?",
+      "expected_scope": "IN_SCOPE",
+      "retrieved": true,
+      "sources": [
+        "Pradhan_Mantri_Krishi_Sinchai_Yojana.pdf page 6",
+        "Pradhan_Mantri_Krishi_Sinchai_Yojana.pdf page 5",
+        "Pradhan_Mantri_Krishi_Sinchai_Yojana.pdf page 1"
+      ],
+      "pass": true,
+      "expected_behavior": "Use retrieved agriculture evidence and do not invent scheme eligibility."
+    },
+    {
+      "question": "What is the latest farmer scheme update?",
+      "expected_scope": "IN_SCOPE",
+      "retrieved": true,
+      "sources": [
+        "PM_Kisan_Maan_Dhan_Yojana.pdf page 2",
+        "Livestock_Insurance_-_An_introduction.pdf page 4",
+        "Pradhan_Mantri_Kisan_Samman_Nidhi.pdf page 2",
+        "National_Mission_on_Natural_Farming.pdf page 1"
+      ],
+      "pass": true,
+      "expected_behavior": "Use web fallback when local evidence is insufficient and clearly label web evidence."
+    },
+    {
+      "question": "What subsidies are available for farmers?",
+      "expected_scope": "IN_SCOPE",
+      "retrieved": true,
+      "sources": [
+        "Pradhan_Mantri_Krishi_Sinchai_Yojana.pdf page 6",
+        "Animal_Husbandry_Infrastructure_Development_Fund.pdf page 2",
+        "Credit_facility_for_farmers.pdf page 1"
+      ],
+      "pass": true,
+      "expected_behavior": "Answer from available evidence and state when more state-specific information is needed."
+    },
+    {
+      "question": "Can you help me write a movie review?",
+      "expected_scope": "OUT_OF_SCOPE",
+      "retrieved": true,
+      "sources": [
+        "Agriculture_Infrastructure_Fund.pdf page 5",
+        "Credit_facility_for_farmers.pdf page 2",
+        "Financial_assistance_to_organic_farmers.pdf page 1",
+        "PM_Kisan_Maan_Dhan_Yojana.pdf page 4"
+      ],
+      "pass": true,
+      "expected_behavior": "Politely explain that the adviser is focused on agriculture and farmer support."
+    },
+    {
+      "question": "What is the capital of France?",
+      "expected_scope": "OUT_OF_SCOPE",
+      "retrieved": true,
+      "sources": [
+        "National_Beekeeping_and_Honey_Mission.pdf page 2",
+        "Animal_Husbandry_Infrastructure_Development_Fund.pdf page 6",
+        "Rashtriya_Gokul_Mission.pdf page 3",
+        "Fisheries_and_Aquaculture_Infrastructure_Development_Fund.pdf page 2"
+      ],
+      "pass": true,
+      "expected_behavior": "Politely redirect to agriculture and farmer-support questions."
+    }
+  ]
+}

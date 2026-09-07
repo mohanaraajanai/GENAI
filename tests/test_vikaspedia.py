@@ -208,8 +208,6 @@ with sync_playwright() as p:
         " vikaspedia_main.png"
     )
 
-    input(
-        "\nPress ENTER to close..."
-    )
+    #input("\nPress ENTER to close..." )#
 
     browser.close()
